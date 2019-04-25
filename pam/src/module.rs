@@ -1,6 +1,6 @@
 //! Functions for use in pam modules.
 
-use libc::c_char;
+use libc::{c_char, c_void};
 use std::{mem, ptr};
 use std::ffi::{CStr, CString};
 
@@ -29,9 +29,9 @@ extern "C" {
 
     fn pam_set_data(pamh: *const PamHandle,
                     module_data_name: *const c_char,
-                    data: Box<PamDataT>,
+                    data: *mut c_void, //Box<PamDataT>,
                     cleanup: extern "C" fn(pamh: *const PamHandle,
-                                           data: Box<PamDataT>,
+                                           data: *mut c_void, //Box<PamDataT>,
                                            error_status: PamResultCode))
                     -> PamResultCode;
 
@@ -52,9 +52,9 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn cleanup<T>(_: *const PamHandle, c_data: Box<PamDataT>, _: PamResultCode) {
+pub extern "C" fn cleanup(_: *const PamHandle, c_data: *mut c_void, _: PamResultCode) {
     unsafe {
-        let data: Box<T> = mem::transmute(c_data);
+        let data = Box::from_raw(c_data);
         mem::drop(data);
     }
 }
@@ -100,11 +100,11 @@ impl PamHandle {
     ///
     /// See `pam_set_data` in
     /// http://www.linux-pam.org/Linux-PAM-html/mwg-expected-by-module-item.html
-    pub fn set_data<T>(&self, key: &str, data: Box<T>) -> PamResult<()> {
+    pub fn set_data(&self, key: &str, data: *mut c_void) -> PamResult<()> {
         let c_key = CString::new(key).unwrap().as_ptr();
         let res = unsafe {
-            let c_data: Box<PamDataT> = mem::transmute(data);
-            pam_set_data(self, c_key, c_data, cleanup::<T>)
+            let c_data = Box::from_raw(data); //: Box<PamDataT> = mem::transmute(data);
+            pam_set_data(self, c_key, Box::into_raw(c_data), cleanup)
         };
         if PamResultCode::PAM_SUCCESS == res {
             Ok(())
